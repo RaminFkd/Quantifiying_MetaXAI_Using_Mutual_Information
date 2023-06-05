@@ -1,17 +1,37 @@
 
 from collections import defaultdict
-from tqdm import tqdm
 
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import datasets
 
+from tqdm import tqdm
+
 def train_one_epoch(
     model: nn.Module,
     dataset: datasets.VisionDataset,
     batch_size: int,
 ) -> defaultdict:
+    """
+    Train the model for one epoch. Using CrossEntropyLoss and Adam optimizer.
+    Learning rate is 1e-3.
+    Stop training if accuracy is at least 84.2% for 50 batches.
+
+    Parameters
+    ----------
+    model : nn.Module
+        The model to train
+    dataset : datasets.VisionDataset
+        The dataset to use
+    batch_size : int
+        The batch size to use
+
+    Returns
+    -------
+    defaultdict
+        The stats for the epoch
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataloader = DataLoader(
         dataset=dataset,

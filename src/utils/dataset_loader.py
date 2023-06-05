@@ -25,6 +25,23 @@ def get_best_batch_size(
     dataset: datasets.VisionDataset,
     device: torch.device,
 ) -> int:
+    """
+    Finds the largest batch size that fits in memory.
+
+    Parameters
+    ----------
+    model : nn.Module
+        The model to use
+    dataset : datasets.VisionDataset
+        The dataset to use
+    device : torch.device
+        The device to use
+
+    Returns
+    -------
+    int
+        The largest batch size that fits in memory
+    """
 
     model.eval()
     model.to(device)
@@ -123,6 +140,15 @@ def load_dataset(
 
 
 class IndexedDataset(datasets.VisionDataset):
+    """
+    Wrapper class for datasets.VisionDataset that returns the index of the
+    sample as well as the sample itself.
+
+    Parameters
+    ----------
+    datasets : datasets.VisionDataset
+        The dataset to wrap
+    """
 
     def __init__(self, dataset: datasets.VisionDataset):
         super().__init__(root=dataset.root, transform=dataset.transform)
@@ -134,6 +160,10 @@ class IndexedDataset(datasets.VisionDataset):
     def __len__(self):
         return len(self.dataset)
 
+################################################
+#-----------------CUB_200_2011-----------------#
+#---------------Third-party code---------------#
+################################################
 
 class Cub2011(Dataset):
     """

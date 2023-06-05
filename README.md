@@ -17,7 +17,7 @@ To generate Saliency Maps, run the following command:
 
 ```bash
 cd src
-python SaliencyGen.py
+python main_saliency_gen.py
 ```
 
 ## Pretrained Models
