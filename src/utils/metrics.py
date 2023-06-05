@@ -1,9 +1,12 @@
 import os
 import pickle as pkl
 from pathlib import PurePath
-from typing import Union
+from typing import Dict, Optional, Tuple, Union
 
 import numpy as np
+
+import torch
+import torchvision.transforms as T
 
 from tqdm import tqdm
 
@@ -69,11 +72,26 @@ def norm_map(
 
     return (map - np.min(map)) / (np.max(map) - np.min(map))
 
+def softmax(x: np.ndarray) -> np.ndarray:
+    """
+    Softmax function.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        The input.
+
+    Returns
+    -------
+    np.ndarray
+        The softmax of the input.
+    """
+    return np.exp(x) / np.sum(np.exp(x), axis=0)
 
 def get_masked_image(
     img: np.ndarray,
     saliency_map: np.ndarray,
-    masking_steps: int,
+    mask: Optional[np.ndarray] = None,
     method: str = "AUC"
 ) -> np.ndarray:
     """
@@ -89,10 +107,9 @@ def get_masked_image(
         If the saliency map has three dimensions, the sum over
         the first dimension is calculated. The saliency map
         is then normalized.
-    masking_steps : int
-        The number of masking steps on the image.
-        For method "AUC" this is the number of pixels from the
-        saliency map to mask in the original image.
+    mask : Optional[np.ndarray], optional
+        The mask to apply to the image, by default None.
+        Can be used to apply a mask from a previous masking step.
     method : str, optional
         The metric to calculate the mask for, by default "AUC"
 
@@ -109,26 +126,121 @@ def get_masked_image(
 
     if len(saliency_map.shape) == 3:
         saliency_map = norm_map(np.sum(saliency_map, axis=0)).squeeze()
+        saliency_map = saliency_map * 255
+        saliency_map = saliency_map.astype(np.uint8)
 
     r = img.shape[1]/saliency_map.shape[0]
     assert r == img.shape[2]/saliency_map.shape[1], \
         "The image and the saliency map must have the same aspect ratio."
 
     if method == "AUC":
-        mask = np.ones((img.shape[1], img.shape[2]))
+        mask = np.ones((img.shape[1], img.shape[2])) if mask is None else mask
+        steps = np.count_nonzero(mask == 0)
+        steps = int((steps // r**2))
 
         # get the indices of the sorted saliency map in descending order
         sort_idx = np.unravel_index(
-            np.argsort(-saliency_map, axis=None),
+            np.argsort(saliency_map.ravel(), axis=None),
             saliency_map.shape
         )
 
-        for i_s, j_s in zip(sort_idx[0], sort_idx[1]):
+        for i_s, j_s in zip(sort_idx[0][::-1][steps:], sort_idx[1][::-1][steps:]):
+            if saliency_map[i_s, j_s] == 0:
+                mask *= 0
+                return img * mask[np.newaxis, :, :], mask
+
             mask[int(i_s*r):int((i_s+1)*r), int(j_s*r):int((j_s+1)*r)] = 0
-            masking_steps -= 1
-            if masking_steps <= 0:
-                return img * mask[:, :, np.newaxis]
+            return img * mask[np.newaxis, :, :], mask
+
     else:
         raise NotImplementedError(
             f"Method {method} is not implemented."
         )
+
+
+class DAUC():
+
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        maps: Dict[int, Tuple[np.ndarray, np.ndarray]],
+        device: torch.device,
+        masking_steps: Optional[int] = None,
+    ):
+        self.model = model
+        self.maps = maps
+        self.device = device
+        self.masking_steps = masking_steps
+
+        self.keys = list(self.maps.keys())
+        self.current_idx = 0
+
+        self.transform = T.Compose([
+            T.ToTensor(),
+            T.Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225],
+            )
+        ])
+
+    def __iter__(self):
+        self.current_idx = 0
+        return self
+
+    def __next__(self):
+        if self.current_idx >= len(self.keys):
+            raise StopIteration
+
+        result = self._get_dauc()
+        self.current_idx += 1
+        return result
+
+    def _get_dauc(self):
+        img, map = self.maps[self.keys[self.current_idx]]
+        masked_image = img
+        mask = np.ones((img.shape[1], img.shape[2]))
+        outputs = []
+        proportions = []
+
+        pbar = tqdm(desc=f'Masking image {self.current_idx}')
+
+        i = 0
+        masked_imgs = []
+        while mask.sum() > 0:
+
+            proportions.append(np.count_nonzero(mask==0) / mask.size)
+
+            masked_image, mask = get_masked_image(
+                img=img,
+                saliency_map=map,
+                mask=mask,
+                method="AUC"
+            )
+            norm_img = self.transform(np.moveaxis(masked_image, 0, -1))
+            norm_img = norm_img.type(torch.FloatTensor).unsqueeze(0)
+            masked_imgs.append(norm_img)
+
+            if len(masked_imgs) >= 20 or mask.sum() == 0:
+                masked_imgs = torch.cat(masked_imgs, dim=0)
+                prediction = self.model(masked_imgs.to(self.device))
+                outputs.extend(prediction.detach().cpu().tolist())
+                masked_imgs = []
+
+            pbar.update(1)
+            i += 1
+
+            if self.masking_steps is not None and i >= self.masking_steps:
+                break
+
+        outputs = np.array(outputs)
+        proportions = np.array(proportions)
+        # outputs = np.apply_along_axis(softmax, 1, outputs)
+
+        inital_prediction = np.argmax(outputs[0])
+        deletion_score = outputs[:, inital_prediction]
+        lower_bound = deletion_score - deletion_score.min()
+        upper_bound = deletion_score.max() - deletion_score.min()
+        deletion_score = lower_bound / upper_bound
+
+        return np.trapz(deletion_score, proportions), deletion_score, proportions
+
