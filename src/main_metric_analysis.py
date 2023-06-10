@@ -45,3 +45,11 @@ if __name__=='__main__':
     )
     d_auc, _, _ = next(dauc)
     print(d_auc)
+
+    iauc = metrics.IAUC(
+        model=model,
+        maps=maps,
+        device=device,
+    )
+    i_auc, _, _ = next(iauc)
+    print(i_auc)
