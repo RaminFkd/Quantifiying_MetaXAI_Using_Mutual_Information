@@ -133,8 +133,6 @@ class DAUC():
         mask : Optional[np.ndarray], optional
             The mask to apply to the image, by default None.
             Can be used to apply a mask from a previous masking step.
-        method : str, optional
-            The metric to calculate the mask for, by default "AUC"
 
         Returns
         -------
@@ -161,12 +159,12 @@ class DAUC():
             saliency_map.shape
         )
 
-        for i_s, j_s in zip(sort_idx[0][::-1][steps:], sort_idx[1][::-1][steps:]):
-            if saliency_map[i_s, j_s] == 0:
+        for i, j in zip(sort_idx[0][::-1][steps:], sort_idx[1][::-1][steps:]):
+            if saliency_map[i, j] == 0:
                 mask *= 0
                 return img * mask[np.newaxis, :, :], mask
 
-            mask[int(i_s*r):int((i_s+1)*r), int(j_s*r):int((j_s+1)*r)] = 0
+            mask[int(i*r):int((i+1)*r), int(j*r):int((j+1)*r)] = 0
             return img * mask[np.newaxis, :, :], mask
 
     def _get_dauc(self):
@@ -213,7 +211,11 @@ class DAUC():
         deletion_score = outputs[:, inital_prediction]
         deletion_score /= deletion_score.max()
 
-        return np.trapz(deletion_score, proportions), deletion_score, proportions
+        return (
+            np.trapz(deletion_score, proportions),
+            deletion_score,
+            proportions
+        )
 
 
 class IAUC():
@@ -272,6 +274,28 @@ class IAUC():
         saliency_map: np.ndarray,
         mask: Optional[np.ndarray] = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Applies the mask to the image.
+
+        Parameters
+        ----------
+        img : np.ndarray
+            The image with three dimensions in channel first order
+            (channels, height, width).
+        saliency_map : np.ndarray
+            The saliency map with two dimensions, height and width.
+            If the saliency map has three dimensions, the sum over
+            the first dimension is calculated. The saliency map
+            is then normalized.
+        mask : Optional[np.ndarray], optional
+            The mask to apply to the image, by default None.
+            Can be used to apply a mask from a previous masking step.
+
+        Returns
+        -------
+        Tuple[np.ndarray, np.ndarray]
+            The masked image and the mask.
+        """
 
         if len(saliency_map.shape) == 3:
             saliency_map = norm_map(np.sum(saliency_map, axis=0)).squeeze()
@@ -293,18 +317,26 @@ class IAUC():
         )
         blured_img = self.blur(np.moveaxis(img, 0, -1)).numpy()
 
-        for i_s, j_s in zip(sort_idx[0][::-1][steps:], sort_idx[1][::-1][steps:]):
-            if saliency_map[i_s, j_s] == 0:
+        for i, j in zip(sort_idx[0][::-1][steps:], sort_idx[1][::-1][steps:]):
+            if saliency_map[i, j] == 0:
                 mask = np.ones((mask.shape[0], mask.shape[1]))
             else:
-                mask[int(i_s*r):int((i_s+1)*r), int(j_s*r):int((j_s+1)*r)] = 1
+                mask[int(i*r):int((i+1)*r), int(j*r):int((j+1)*r)] = 1
 
             masked_img = img * mask[np.newaxis, :, :]
             masked_img += blured_img * (1 - mask[np.newaxis, :, :])
 
             return masked_img, mask
 
-    def _get_iauc(self):
+    def _get_iauc(self) -> Tuple[float, np.ndarray, np.ndarray]:
+        """
+        Calculates the integrated IAUC for the current image.
+
+        Returns
+        -------
+        Tuple[float, np.ndarray, np.ndarray]
+            The IAUC, the insertion scores and the proportions.
+        """
         img, map = self.maps[self.keys[self.current_idx]]
         masked_image = img
         mask = np.zeros((img.shape[1], img.shape[2]))
@@ -355,5 +387,8 @@ class IAUC():
         insertion_score = outputs[:, inital_prediction]
         insertion_score /= insertion_score.max()
 
-        return np.trapz(insertion_score, proportions), insertion_score, proportions
-
+        return (
+            np.trapz(insertion_score, proportions),
+            insertion_score,
+            proportions
+        )
