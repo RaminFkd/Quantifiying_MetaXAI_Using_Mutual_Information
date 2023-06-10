@@ -4,11 +4,9 @@ from pathlib import PurePath
 from typing import Dict, Optional, Tuple, Union
 
 import numpy as np
-
 import torch
-import torchvision.transforms as T
 import torch.nn.functional as F
-
+import torchvision.transforms as T
 from tqdm import tqdm
 
 
@@ -74,7 +72,7 @@ def norm_map(
     return (map - np.min(map)) / (np.max(map) - np.min(map))
 
 
-class DAUC():
+class AUCBase():
 
     def __init__(
         self,
@@ -99,6 +97,12 @@ class DAUC():
             )
         ])
 
+        # Set the auc_calc to the appropriate function in the subclass.
+        self.auc_calc = self._get_auc
+
+    def __len__(self):
+        return len(self.keys)
+
     def __iter__(self):
         self.current_idx = 0
         return self
@@ -107,9 +111,31 @@ class DAUC():
         if self.current_idx >= len(self.keys):
             raise StopIteration
 
-        result = self._get_dauc()
+        result = self.auc_calc()
         self.current_idx += 1
         return result
+
+    def _get_auc(self):
+        raise NotImplementedError
+
+
+class DAUC(AUCBase):
+
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        maps: Dict[int, Tuple[np.ndarray, np.ndarray]],
+        device: torch.device,
+        masking_steps: Optional[int] = None,
+    ):
+        super().__init__(
+            model=model,
+            maps=maps,
+            device=device,
+            masking_steps=masking_steps,
+        )
+
+        self.auc_calc = self._get_dauc
 
     def _get_masked_image(
         self,
@@ -174,7 +200,7 @@ class DAUC():
         outputs = []
         proportions = []
 
-        pbar = tqdm(desc=f'Masking image {self.current_idx}')
+        pbar = tqdm(desc=f'DAUC - Masking image {self.current_idx}')
 
         i = 0
         masked_imgs = []
@@ -201,8 +227,12 @@ class DAUC():
             i += 1
 
             if self.masking_steps is not None and i >= self.masking_steps:
+                if len(masked_imgs) > 0:
+                    masked_imgs = torch.cat(masked_imgs, dim=0)
+                    prediction = self.model(masked_imgs.to(self.device))
+                    outputs.extend(prediction.detach().cpu().tolist())
                 break
-
+        pbar.close()
         outputs = np.array(outputs)
         proportions = np.array(proportions)
         outputs = F.softmax(torch.tensor(outputs), dim=1).numpy()
@@ -218,7 +248,7 @@ class DAUC():
         )
 
 
-class IAUC():
+class IAUC(AUCBase):
 
     def __init__(
         self,
@@ -227,13 +257,12 @@ class IAUC():
         device: torch.device,
         masking_steps: Optional[int] = None,
     ):
-        self.model = model
-        self.maps = maps
-        self.device = device
-        self.masking_steps = masking_steps
-
-        self.keys = list(self.maps.keys())
-        self.current_idx = 0
+        super().__init__(
+            model=model,
+            maps=maps,
+            device=device,
+            masking_steps=masking_steps,
+        )
 
         self.blur = T.Compose([
             T.ToTensor(),
@@ -248,25 +277,7 @@ class IAUC():
             ),
         ])
 
-        self.transform = T.Compose([
-            T.ToTensor(),
-            T.Normalize(
-                mean=[0.485, 0.456, 0.406],
-                std=[0.229, 0.224, 0.225],
-            )
-        ])
-
-    def __iter__(self):
-        self.current_idx = 0
-        return self
-
-    def __next__(self):
-        if self.current_idx >= len(self.keys):
-            raise StopIteration
-
-        result = self._get_iauc()
-        self.current_idx += 1
-        return result
+        self.auc_calc = self._get_iauc
 
     def _get_masked_image(
         self,
@@ -343,7 +354,7 @@ class IAUC():
         outputs = []
         proportions = []
 
-        pbar = tqdm(desc=f'Masking image {self.current_idx}')
+        pbar = tqdm(desc=f'IAUC - Masking image {self.current_idx}')
 
         i = 0
         masked_imgs = []
@@ -370,8 +381,12 @@ class IAUC():
             i += 1
 
             if self.masking_steps is not None and i >= self.masking_steps:
+                if len(masked_imgs) > 0:
+                    masked_imgs = torch.cat(masked_imgs, dim=0)
+                    prediction = self.model(masked_imgs.to(self.device))
+                    outputs.extend(prediction.detach().cpu().tolist())
                 break
-
+        pbar.close()
         outputs = np.array(outputs)
         proportions = np.array(proportions)
         outputs = F.softmax(torch.tensor(outputs), dim=1).numpy()
