@@ -140,7 +140,7 @@ def gen_saliency_maps(
     model_layers = [name for name, _ in model.named_modules()]
 
     if gradcamlayers is None:
-        gradcamlayers = [name for name in model_layers if 'conv1' in name]
+        gradcamlayers = [name for name in model_layers if 'conv3' in name]
     else:
         diff = set(gradcamlayers) - set(model_layers)
         if len(diff) > 0:

@@ -78,10 +78,10 @@ def train_one_epoch(
             f'Training | Loss: {loss:.4f} | Acc: {acc:.4f}'
         )
 
-        if (len(stats['acc']) >= 50 and
-                sum(stats['acc'][-50:])/len(stats['acc'][-50:]) >= 0.842):
-            print("Reached 84.2%% accuracy. Ending training.")
-            stop = True
-            break
+        # if (len(stats['acc']) >= 50 and
+        #         sum(stats['acc'][-50:])/len(stats['acc'][-50:]) >= 0.842):
+        #     print("Reached 84.2%% accuracy. Ending training.")
+        #     stop = True
+        #     break
 
     return stats, stop
