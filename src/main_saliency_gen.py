@@ -7,7 +7,7 @@ from models import model_loader
 from utils import dataset_loader, saliency_gen
 from engine import train
 
-WEIGHTS_PATH = "./output/weights/ResNet50.pth"
+WEIGHTS_PATH = "./output/weights/resnet50_9.pth"
 DATASET_NAME = 'CUB_200_2011'
 MODEL_NAME = 'resnet50'
 OUT_DIR = './output'
@@ -21,7 +21,7 @@ if __name__=='__main__':
 
     dataset = dataset_loader.load_dataset(
         dataset_name=DATASET_NAME,
-        resize=(224, 224)
+        resize=(128, 128)
     )
     model, tuned = model_loader.load_cnn(
         model_name=MODEL_NAME,
@@ -44,10 +44,9 @@ if __name__=='__main__':
                 batch_size=batch_size,
             )
 
-            if stop:
-                os.makedirs(weights_path.parent, exist_ok=True)
-                torch.save(model.state_dict(), open(weights_path, 'wb'))
-                break
+            os.makedirs(weights_path.parent, exist_ok=True)
+            file = weights_path.parent / f"{MODEL_NAME}_{epoch}.pth"
+            torch.save(model.state_dict(), open(file, 'wb'))
 
     saliency_gen.gen_saliency_maps(
         model=model,
