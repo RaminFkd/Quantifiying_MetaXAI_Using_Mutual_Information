@@ -1,38 +1,32 @@
-
 import os
 import pickle as pkl
-from collections import defaultdict
 from operator import attrgetter
+from typing import Optional, List, Union, Dict, Tuple
 from pathlib import PurePath
-from typing import Dict, List, Optional, Tuple, Union
-# from threading import Thread
+from collections import defaultdict
 
+from threading import Thread
+
+from tqdm import tqdm
 import numpy as np
-
 import torch
-from torch import nn
+import torchvision.transforms as T
 from torch.utils.data import DataLoader
-from torchvision import transforms as T
+from torch import nn
 from torchvision import datasets
 from captum.attr import Saliency, IntegratedGradients, LayerGradCam
 from captum.attr import visualization as viz
 from pytorch_grad_cam import ScoreCAM
 
-from tqdm import tqdm
+import models.ModelLoader
+import engine.ModelTrain
 
+import utils.DatasetLoader
+from utils.DatasetLoader import get_best_batch_size
 
 def _viz_worker(
     maps: Dict[str, Tuple[np.ndarray, np.ndarray]],
 ):
-    """
-    Visualises the saliency maps and saves them to disk.
-
-    Parameters
-    ----------
-    maps : Dict[str, Tuple[np.ndarray, np.ndarray]]
-        A dictionary mapping a string filepath containing the attribution to a
-        tuple of the original image and the attribution map.
-    """
     while len(maps) > 0:
         key, val = maps.popitem()
         image, attr = val
@@ -55,6 +49,54 @@ def _viz_worker(
             )
 
 
+def _recursive_getattr(obj, attr_list):
+    if len(attr_list) == 1:
+        return getattr(obj, attr_list[0])
+    else:
+        return _recursive_getattr(getattr(obj, attr_list[0]), attr_list[1:])
+
+
+def get_class_accuracy(
+    model: nn.Module,
+    dataset: datasets.VisionDataset,
+    transform: nn.Module,
+    device: torch.device,
+) -> defaultdict:
+
+    batch_size = get_best_batch_size(
+        model=model,
+        dataset=dataset,
+        device=device
+    ) // 2
+
+    dataloader = DataLoader(
+        dataset=dataset,
+        batch_size=batch_size,
+        num_workers=8,
+    )
+
+    # Get class accuracy
+    model.eval()
+    model.to(device)
+    class_correct = defaultdict(list)
+    for _, batch in tqdm(dataloader):
+        images, labels = batch
+        images = transform(images)
+        images, labels = images.to(device), labels.to(device)
+
+        outputs = model(images)
+        outputs = nn.functional.softmax(outputs, dim=1)
+        _, predicted = torch.max(outputs, 1)
+
+        for label, pred in zip(labels, predicted):
+            class_correct[label.item()].append((label == pred).item())
+
+    for label, correct in class_correct.items():
+        class_correct[label] = sum(correct)/len(correct)
+
+    print(class_correct)
+
+
 def save_attr(
     image: np.ndarray,
     attr: np.ndarray,
@@ -63,25 +105,6 @@ def save_attr(
     methods: Optional[List[str]] = ["original_image", "heat_map", "blended_heat_map"],
     signs: Optional[List[str]] = ["all", "positive", "positive"],
 ):
-    """
-    Saves the attribution map to disk.
-    If methods and signs are specified, they need to have the same length.
-
-    Parameters
-    ----------
-    image : np.ndarray
-        The original image.
-    attr : np.ndarray
-        The attribution map.
-    path : Union[str, PurePath]
-        The path to save the attribution map to.
-    filename : str
-        The filename of the attribution map.
-    methods : Optional[List[str]], optional
-        Visualization methods for the plot, by default ["original_image", "heat_map", "blended_heat_map"]
-    signs : Optional[List[str]], optional
-        What attibutes to choose for each method, by default ["all", "positive", "positive"]
-    """
     assert len(methods) == len(signs), \
         "methods and signs must have the same length"
 
@@ -110,32 +133,9 @@ def gen_saliency_maps(
     gradcamlayers: Optional[List[str]] = None,
     **dataloader_kwargs
 ):
-    """
-    Generates saliency maps for the given model and dataset.
-
-    Parameters
-    ----------
-    model : nn.Module
-        The model to generate saliency maps for.
-    dataset : datasets.VisionDataset
-        The dataset to generate saliency maps for.
-    device : torch.device
-        The device to run the model on.
-    output_dir : Union[str, PurePath]
-        The directory to save the saliency maps to.
-    gradcamlayers : Optional[List[str]], optional
-        A list of layers for GradCAM, by default all 'conv1' layers.
-
-    Raises
-    ------
-    ValueError
-        If gradcamlayers contains a layer that is not in the model.
-    """
 
     if isinstance(output_dir, str):
         output_dir = PurePath(output_dir)
-
-    os.makedirs(output_dir, exist_ok=True)
 
     model_layers = [name for name, _ in model.named_modules()]
 
@@ -250,9 +250,6 @@ def gen_saliency_maps(
                 with open(file, "ab") as f:
                     pkl.dump(val, f)
 
-            # If the maps should be plotted or not,
-            # please comment in or out the following lines
-            # (VERY TIME CONSUMING!):
             # thread = Thread(
             #     target=_viz_worker,
             #     args=(maps, )
@@ -263,3 +260,48 @@ def gen_saliency_maps(
 
     for thread in workers:
         thread.join()
+
+
+if __name__=='__main__':
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Device: {device}")
+    weights_path = PurePath(
+        f"./output/weights/ResNet50.pth"
+    )
+
+    dataset = utils.DatasetLoader.load_dataset(
+        dataset_name='CUB_200_2011',
+        resize=(224, 224)
+    )
+    model, tuned = models.ModelLoader.load_cnn(
+        model_name='resnet50',
+        pretrained=True,
+        out_features=200,
+        load_weights=weights_path,
+    )
+
+    batch_size = utils.DatasetLoader.get_best_batch_size(
+        model=model,
+        dataset=dataset,
+        device=device
+    )
+    print(f"Batch size: {batch_size}")
+    if not tuned:
+        for epoch in range(10):
+            stats, stop = engine.ModelTrain.train_one_epoch(
+                model=model,
+                dataset=dataset,
+                batch_size=batch_size,
+            )
+
+            if stop:
+                os.makedirs(weights_path.parent, exist_ok=True)
+                torch.save(model.state_dict(), open(weights_path, 'wb'))
+                break
+
+    gen_saliency_maps(
+        model=model,
+        dataset=dataset,
+        device=device,
+        output_dir='./output'
+    )

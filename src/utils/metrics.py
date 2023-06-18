@@ -1,9 +1,11 @@
+from collections import defaultdict
 import os
 import pickle as pkl
 from pathlib import PurePath
-from typing import Dict, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from scipy.stats.stats import pearsonr
 import torch
 import torch.nn.functional as F
 import torchvision.transforms as T
@@ -50,6 +52,37 @@ def load_maps(
 
     pbar.close()
     return maps
+
+
+def load_dauc_iauc(
+    path_to_dauc_iauc: Union[str, PurePath],
+) -> Dict[str, list]:
+
+
+    if isinstance(path_to_dauc_iauc, str):
+        path_to_dauc_iauc = PurePath(path_to_dauc_iauc)
+
+    dauc_iauc = defaultdict(list)
+
+    pbar = tqdm(
+        total=os.path.getsize(path_to_dauc_iauc),
+        unit="B",
+        unit_scale=True,
+        desc="Loading DAUC and IAUC to memory"
+    )
+
+    with open(path_to_dauc_iauc, "rb") as f:
+        while True:
+            try:
+                idx, dauc, iauc = pkl.load(f)
+                dauc_iauc['iauc'].append(iauc)
+                dauc_iauc['dauc'].append(dauc)
+                dauc_iauc['idx'].append(idx)
+            except EOFError:
+                break
+            pbar.update(f.tell() - pbar.n)
+
+    return dauc_iauc
 
 
 def norm_map(
@@ -127,6 +160,7 @@ class DAUC(AUCBase):
         maps: Dict[int, Tuple[np.ndarray, np.ndarray]],
         device: torch.device,
         masking_steps: Optional[int] = None,
+        verbose: bool = False,
     ):
         super().__init__(
             model=model,
@@ -134,7 +168,7 @@ class DAUC(AUCBase):
             device=device,
             masking_steps=masking_steps,
         )
-
+        self.verbose = verbose
         self.auc_calc = self._get_dauc
 
     def _get_masked_image(
@@ -186,27 +220,32 @@ class DAUC(AUCBase):
         )
 
         for i, j in zip(sort_idx[0][::-1][steps:], sort_idx[1][::-1][steps:]):
-            if saliency_map[i, j] == 0:
-                mask *= 0
-                return img * mask[np.newaxis, :, :], mask
-
             mask[int(i*r):int((i+1)*r), int(j*r):int((j+1)*r)] = 0
-            return img * mask[np.newaxis, :, :], mask
+            return img * np.repeat(mask[np.newaxis, :, :], 3, axis=0), mask
+
+        return img * 0, mask * 0
 
     def _get_dauc(self):
         img, map = self.maps[self.keys[self.current_idx]]
         masked_image = img
         mask = np.ones((img.shape[1], img.shape[2]))
         outputs = []
-        proportions = []
 
-        pbar = tqdm(desc=f'DAUC - Masking image {self.current_idx}')
+        if len(map.shape) == 3:
+            map = norm_map(np.sum(map, axis=0)).squeeze()
+            map = map * 255
+            map = map.astype(np.uint8)
+
+        if self.verbose:
+            pbar = tqdm(
+                desc=f'DAUC - Masking image {self.current_idx}',
+                total=map.size,
+            )
 
         i = 0
         masked_imgs = []
-        while mask.sum() > 0:
 
-            proportions.append(np.count_nonzero(mask==0) / mask.size)
+        while i < map.size:
 
             masked_image, mask = self._get_masked_image(
                 img=img,
@@ -217,13 +256,14 @@ class DAUC(AUCBase):
             norm_img = norm_img.type(torch.FloatTensor).unsqueeze(0)
             masked_imgs.append(norm_img)
 
-            if len(masked_imgs) >= 16 or mask.sum() == 0:
+            if len(masked_imgs) >= 64 or mask.sum() == 0:
                 masked_imgs = torch.cat(masked_imgs, dim=0)
                 prediction = self.model(masked_imgs.to(self.device))
                 outputs.extend(prediction.detach().cpu().tolist())
                 masked_imgs = []
 
-            pbar.update(1)
+            if self.verbose:
+                pbar.update(1)
             i += 1
 
             if self.masking_steps is not None and i >= self.masking_steps:
@@ -232,9 +272,10 @@ class DAUC(AUCBase):
                     prediction = self.model(masked_imgs.to(self.device))
                     outputs.extend(prediction.detach().cpu().tolist())
                 break
-        pbar.close()
+
+        if self.verbose:
+            pbar.close()
         outputs = np.array(outputs)
-        proportions = np.array(proportions)
         outputs = F.softmax(torch.tensor(outputs), dim=1).numpy()
 
         inital_prediction = np.argmax(outputs[0])
@@ -242,9 +283,8 @@ class DAUC(AUCBase):
         deletion_score /= deletion_score.max()
 
         return (
-            np.trapz(deletion_score, proportions),
-            deletion_score,
-            proportions
+            np.trapz(deletion_score, dx=1/map.size),
+            deletion_score
         )
 
 
@@ -256,6 +296,7 @@ class IAUC(AUCBase):
         maps: Dict[int, Tuple[np.ndarray, np.ndarray]],
         device: torch.device,
         masking_steps: Optional[int] = None,
+        verbose: bool = False,
     ):
         super().__init__(
             model=model,
@@ -264,19 +305,7 @@ class IAUC(AUCBase):
             masking_steps=masking_steps,
         )
 
-        self.blur = T.Compose([
-            T.ToTensor(),
-            T.GaussianBlur(
-                kernel_size=5,
-            ),
-            T.GaussianBlur(
-                kernel_size=9,
-            ),
-            T.GaussianBlur(
-                kernel_size=17,
-            ),
-        ])
-
+        self.verbose = verbose
         self.auc_calc = self._get_iauc
 
     def _get_masked_image(
@@ -326,18 +355,12 @@ class IAUC(AUCBase):
             np.argsort(saliency_map.ravel(), axis=None),
             saliency_map.shape
         )
-        blured_img = self.blur(np.moveaxis(img, 0, -1)).numpy()
 
         for i, j in zip(sort_idx[0][::-1][steps:], sort_idx[1][::-1][steps:]):
-            if saliency_map[i, j] == 0:
-                mask = np.ones((mask.shape[0], mask.shape[1]))
-            else:
-                mask[int(i*r):int((i+1)*r), int(j*r):int((j+1)*r)] = 1
+            mask[int(i*r):int((i+1)*r), int(j*r):int((j+1)*r)] = 1
+            return img * np.repeat(mask[np.newaxis, :, :], 3, axis=0), mask
 
-            masked_img = img * mask[np.newaxis, :, :]
-            masked_img += blured_img * (1 - mask[np.newaxis, :, :])
-
-            return masked_img, mask
+        return img, mask
 
     def _get_iauc(self) -> Tuple[float, np.ndarray, np.ndarray]:
         """
@@ -345,23 +368,29 @@ class IAUC(AUCBase):
 
         Returns
         -------
-        Tuple[float, np.ndarray, np.ndarray]
-            The IAUC, the insertion scores and the proportions.
+        Tuple[float, np.ndarray]
+            The IAUC, the insertion scores.
         """
         img, map = self.maps[self.keys[self.current_idx]]
         masked_image = img
         mask = np.zeros((img.shape[1], img.shape[2]))
         outputs = []
-        proportions = []
 
-        pbar = tqdm(desc=f'IAUC - Masking image {self.current_idx}')
+        if len(map.shape) == 3:
+            map = norm_map(np.sum(map, axis=0)).squeeze()
+            map = map * 255
+            map = map.astype(np.uint8)
+
+        if self.verbose:
+            pbar = tqdm(
+                desc=f'IAUC - Masking image {self.current_idx}',
+                total=map.size,
+            )
 
         i = 0
         masked_imgs = []
-        while mask.sum() < mask.size:
 
-            proportions.append(np.count_nonzero(mask==1) / mask.size)
-
+        while i < map.size:
             masked_image, mask = self._get_masked_image(
                 img=img,
                 saliency_map=map,
@@ -371,13 +400,14 @@ class IAUC(AUCBase):
             norm_img = norm_img.type(torch.FloatTensor).unsqueeze(0)
             masked_imgs.append(norm_img)
 
-            if len(masked_imgs) >= 16 or mask.sum() <= mask.size:
+            if len(masked_imgs) >= 64 or mask.sum() <= mask.size:
                 masked_imgs = torch.cat(masked_imgs, dim=0)
                 prediction = self.model(masked_imgs.to(self.device))
                 outputs.extend(prediction.detach().cpu().tolist())
                 masked_imgs = []
 
-            pbar.update(1)
+            if self.verbose:
+                pbar.update(1)
             i += 1
 
             if self.masking_steps is not None and i >= self.masking_steps:
@@ -386,9 +416,10 @@ class IAUC(AUCBase):
                     prediction = self.model(masked_imgs.to(self.device))
                     outputs.extend(prediction.detach().cpu().tolist())
                 break
-        pbar.close()
+
+        if self.verbose:
+            pbar.close()
         outputs = np.array(outputs)
-        proportions = np.array(proportions)
         outputs = F.softmax(torch.tensor(outputs), dim=1).numpy()
 
         inital_prediction = np.argmax(
@@ -403,7 +434,167 @@ class IAUC(AUCBase):
         insertion_score /= insertion_score.max()
 
         return (
-            np.trapz(insertion_score, proportions),
+            np.trapz(insertion_score, dx=1/map.size),
             insertion_score,
-            proportions
         )
+
+
+class Sparsity():
+
+    @staticmethod
+    def get_sparsity(
+        saliency_map: np.ndarray,
+    ) -> float:
+        if len(saliency_map.shape) == 3:
+            saliency_map = np.sum(saliency_map, axis=0)
+
+        min_max_map = norm_map(saliency_map)
+        return 1/np.mean(min_max_map)
+
+    @staticmethod
+    def get_all_sparsities(
+        saliency_maps: np.ndarray,
+    ) -> np.ndarray:
+        return np.array([
+            Sparsity.get_sparsity(saliency_map)
+            for saliency_map in saliency_maps
+        ])
+
+
+class CorrelationBase():
+
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        maps: Dict[int, Tuple[np.ndarray, np.ndarray]],
+        device: torch.device,
+        masking_steps: Optional[int] = None,
+        verbose: bool = False,
+    ) -> None:
+
+        self.model = model
+        self.maps = maps
+        self.device = device
+        self.masking_steps = masking_steps
+        self.verbose = verbose
+
+        if isinstance(self, IC):
+            self.auc = IAUC(
+                model=model,
+                maps=maps,
+                device=device,
+                masking_steps=masking_steps,
+                verbose=verbose,
+            )
+        elif isinstance(self, DC):
+            self.auc = DAUC(
+                model=model,
+                maps=maps,
+                device=device,
+                masking_steps=masking_steps,
+                verbose=verbose,
+            )
+        else:
+            raise NotImplementedError(
+                "The correlation method is not implemented."
+            )
+
+    def to_one_channel(self, img: np.ndarray) -> np.ndarray:
+        if len(img.shape) == 3:
+            img = np.sum(img, axis=0)
+        return norm_map(img)
+
+
+class IC(CorrelationBase):
+
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        maps: Dict[int, Tuple[np.ndarray, np.ndarray]],
+        device: torch.device,
+        masking_steps: Optional[int] = None,
+        verbose: bool = False,
+        iauc_scores: Optional[Dict[str, List[Any]]] = None,
+        n_samples: int = 100,
+    ):
+        super().__init__(
+            model=model,
+            maps=maps,
+            device=device,
+            masking_steps=masking_steps,
+            verbose=verbose,
+        )
+
+        if iauc_scores is None:
+            self.iauc_scores = {'iauc': [], 'idx': []}
+            idx = 0
+            while len(self.iauc_scores) < n_samples:
+                try:
+                    self.iauc_scores['iauc'].append(next(self.auc)[1])
+                    self.iauc_scores['idx'].append(idx)
+                    idx += 1
+                except StopIteration:
+                    break
+            self.iauc_scores['iauc'] = np.array(self.iauc_scores)
+        else:
+            self.iauc_scores = iauc_scores
+
+    def get_ic(self) -> float:
+        variation = self.iauc_scores['iauc'][:, 1:] - self.iauc_scores['iauc'][:, :-1]
+        variation = np.insert(variation, 0, 0, axis=1)
+
+        saliency_scores = np.zeros_like(variation)
+        for i, j in enumerate(self.iauc_scores['idx']):
+            saliency_scores[i] = self.to_one_channel(self.maps[j][1]).flatten()
+
+        saliency_scores = np.sort(saliency_scores, axis=1)
+        correlation = [np.corrcoef(variation[i], saliency_scores[i])[0, 1] for i in range(variation.shape[0])]
+        return np.array(correlation)
+
+
+class DC(CorrelationBase):
+
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        maps: Dict[int, Tuple[np.ndarray, np.ndarray]],
+        device: torch.device,
+        masking_steps: Optional[int] = None,
+        verbose: bool = False,
+        dauc_scores: Optional[Dict[str, List[Any]]] = None,
+        n_samples: int = 100,
+    ):
+        super().__init__(
+            model=model,
+            maps=maps,
+            device=device,
+            masking_steps=masking_steps,
+            verbose=verbose,
+        )
+
+        if dauc_scores is None:
+            self.dauc_scores = {'dauc': [], 'idx': []}
+            idx = 0
+            while len(self.dauc_scores) < n_samples:
+                try:
+                    self.dauc_scores['dauc'].append(next(self.auc)[1])
+                    self.dauc_scores['idx'].append(idx)
+                    idx += 1
+                except StopIteration:
+                    break
+            self.dauc_scores['dauc'] = np.array(self.dauc_scores['dauc'])
+        else:
+            self.dauc_scores = dauc_scores
+
+
+    def get_dc(self):
+        variation = np.diff(self.dauc_scores['dauc'], axis=1)
+        variation = np.insert(variation, 0, variation.shape[1], axis=1)
+
+        saliency_scores = np.zeros_like(variation)
+        for i, j in enumerate(self.dauc_scores['idx']):
+            saliency_scores[i] = self.to_one_channel(self.maps[j][1]).flatten()
+
+        saliency_scores = np.sort(saliency_scores, axis=1)
+        correlation = [np.corrcoef(variation[i], saliency_scores[i])[0, 1] for i in range(variation.shape[0])]
+        return np.array(correlation)
