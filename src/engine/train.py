@@ -12,6 +12,7 @@ def train_one_epoch(
     model: nn.Module,
     dataset: datasets.VisionDataset,
     batch_size: int,
+    device: torch.device = torch.device('cpu'),
 ) -> defaultdict:
     """
     Train the model for one epoch. Using CrossEntropyLoss and Adam optimizer.
@@ -32,7 +33,6 @@ def train_one_epoch(
     defaultdict
         The stats for the epoch
     """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataloader = DataLoader(
         dataset=dataset,
         batch_size=batch_size,
@@ -54,8 +54,7 @@ def train_one_epoch(
         desc=f'Training | Loss: {loss:.4f} | Acc: {acc:.4f}'
     )
 
-    stop = False
-    for idx, batch in pbar:
+    for _, batch in pbar:
         images, labels = batch
         images = images.to(device)
         labels = labels.to(device)
@@ -78,10 +77,4 @@ def train_one_epoch(
             f'Training | Loss: {loss:.4f} | Acc: {acc:.4f}'
         )
 
-        # if (len(stats['acc']) >= 50 and
-        #         sum(stats['acc'][-50:])/len(stats['acc'][-50:]) >= 0.842):
-        #     print("Reached 84.2%% accuracy. Ending training.")
-        #     stop = True
-        #     break
-
-    return stats, stop
+    return stats
