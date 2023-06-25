@@ -1,10 +1,10 @@
 import torch
 import quantus
 import numpy as np
-from typing import Tuple,  Self, Optional
+from typing import Tuple, Optional
 from pathlib import Path
 
-from metric_base import MetricBase, SUPPORTED_METHODS
+from .metric_base import MetricBase, SUPPORTED_METHODS
 
 
 class Selectivity(MetricBase):
@@ -18,7 +18,7 @@ class Selectivity(MetricBase):
         out_path: Optional[Path] = None,
         patch_size: int = 56,
         perturb_baseline: str = "black"
-    ) -> Self:
+    ) -> None:
 
         super().__init__(
             model,

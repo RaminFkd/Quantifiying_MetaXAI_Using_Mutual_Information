@@ -2,10 +2,10 @@ import torch
 import quantus
 import numpy as np
 
-from typing import Tuple, Self, Optional
+from typing import Tuple, Optional
 from pathlib import Path
 
-from metric_base import MetricBase, SUPPORTED_METHODS
+from .metric_base import MetricBase, SUPPORTED_METHODS
 
 
 class SensitivityN(MetricBase):
@@ -23,7 +23,7 @@ class SensitivityN(MetricBase):
         perturb_func: quantus.perturb_func = quantus.perturb_func.baseline_replacement_by_indices,
         perturb_baseline: str = "uniform",
         return_aggregate: bool = False
-    ) -> Self:
+    ) -> None:
         super().__init__(
             model,
             device,
@@ -62,7 +62,7 @@ class SensitivityN(MetricBase):
         np.ndarray
             Correlation coefficients between input features and saliency scores
         """
-        
+
         saliency_scores = self._get_saliency_map(image, label, method)
         return self.sensitivity_n(
             model=self.model,
