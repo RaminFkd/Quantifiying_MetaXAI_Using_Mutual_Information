@@ -22,9 +22,11 @@ def _get_k_nearest_neighbours(
         + np.einsum('ij,ij->i', x, x)[np.newaxis, :] - 2 * x @ x.T
     xx_dist = np.sqrt(xx_dist)
 
-    k_nn_in_xx = np.argsort(xx_dist, axis=1)[:, k:k+1]
+    k_nn_in_xx = np.argsort(xx_dist)[:, k]
     dist_to_knn = xx_dist[np.arange(len(x)), k_nn_in_xx.squeeze()]
-    m_i = np.where(xy_dist < dist_to_knn[:, np.newaxis], 1, 0).sum(axis=1)
+
+    xxy_dist = np.concatenate([xy_dist, xx_dist], axis=1)
+    m_i = np.where(xxy_dist < dist_to_knn[:, np.newaxis], 1, 0).sum(axis=1)
 
     return {
         'N_x': len(x),
@@ -68,7 +70,6 @@ def continuous_mutual_info_score(
     n = n_xy['N_x'] + n_xy['N_y']
     i_xy = digamma(n) + digamma(k) - digamma(n_xy['m_i']) - digamma(n_xy['N_x'])
     i_yx = digamma(n) + digamma(k) - digamma(n_yx['m_i']) - digamma(n_yx['N_y'])
-
     I = np.concatenate([i_xy, i_yx])
     I = (I - I.min()) / (I.max() - I.min())
     return I.mean()
