@@ -89,12 +89,14 @@ class MetricBase():
         image = self.transform(image).unsqueeze(0).to(self.device)
 
         conv3 = [module for name, module in self.model.named_modules() \
-            if "conv3" in name][-1]
+            if "conv3" in name]
 
         if len(conv3) == 0:
             raise ValueError(
                 "No conv3 layer found. Currently only ResNet50 is supported."
             )
+
+        conv3 = conv3[-1]
 
         with torch.no_grad():
             if method == "saliency":
