@@ -4,7 +4,7 @@ import numpy as np
 from typing import Tuple, Optional
 from pathlib import Path
 import time
-
+import matplotlib.pyplot as plt
 from .metric_base import MetricBase, SUPPORTED_METHODS
 
 
@@ -56,28 +56,37 @@ class Selectivity(MetricBase):
         np.ndarray
             Selectivity scores
         """
-        norm_image = self.transform(image)
+        map = self._get_saliency_map(image, label, method)
+        norm_map = self._get_saliency_map(self.transform(image), label, method)
+
+        fig, ax = plt.subplots(1, 2)
+        ax[0].imshow(map)
+        ax[1].imshow(norm_map)
+        plt.show()
+
         results = {method: self.selectivity(
-                                    model=self.model, 
+                                    model=self.model,
                                     channel_first=True,
-                                    x_batch=norm_image.unsqueeze(0).numpy(),
+                                    x_batch=image.unsqueeze(0).numpy(),
                                     y_batch= torch.Tensor([label]).type(torch.int64).numpy(),
                                     a_batch=None,
                                     device=self.device,
                                     explain_func=quantus.explain,
                                     explain_func_kwargs={"method": method}) for method in ["Saliency", "IntegratedGradients"]}
-        
-        
-        self.selectivity.plot(results=results)
+
+        print(list(results.values()))
+        #self.selectivity.plot(results=results)
         start = time.time()
         saliency_scores = self._get_saliency_map(image, label, method)
         result = {method: self.selectivity(
-            model=self.model, 
+            model=self.model,
             channel_first=True,
-            x_batch=norm_image.unsqueeze(0).numpy(),
+            x_batch=image.unsqueeze(0).numpy(),
             y_batch= torch.Tensor([label]).type(torch.int64).numpy(),
             device=self.device,
             a_batch=torch.Tensor(saliency_scores).unsqueeze(0).numpy(),
         )}
         print(f"Time taken: {time.time() - start}")
+        #self.selectivity.plot(results=result)
+        print(list(result.values()))
         return result
