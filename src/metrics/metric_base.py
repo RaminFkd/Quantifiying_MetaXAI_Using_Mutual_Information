@@ -11,7 +11,8 @@ SUPPORTED_METHODS = Literal[
     "saliency",
     "ig",
     "gradcam",
-    "scorecam"
+    "scorecam",
+    "selectivity"
 ]
 
 
@@ -48,6 +49,9 @@ class MetricBase():
                 std=[1/0.229, 1/0.224, 1/0.225] if normalize else [1, 1, 1],
             ),
             T.ToPILImage(),
+        ])
+        self.saliency_resize = T.Compose([
+            T.Resize(resize if resize else (224,224), antialias=True),
         ])
 
     def _get_saliency_map(
