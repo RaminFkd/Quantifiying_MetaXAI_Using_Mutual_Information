@@ -3,6 +3,7 @@ import quantus
 import numpy as np
 from typing import Tuple, Optional
 from pathlib import Path
+import time
 
 from .metric_base import MetricBase, SUPPORTED_METHODS
 
@@ -56,9 +57,26 @@ class Selectivity(MetricBase):
             Selectivity scores
         """
 
+        results = {method: self.selectivity(
+                                    model=self.model, 
+                                    channel_first=True,
+                                    x_batch=image.unsqueeze(0).numpy(),
+                                    y_batch= torch.Tensor([label]).type(torch.int64).numpy(),
+                                    a_batch=None,
+                                    device=self.device,
+                                    explain_func=quantus.explain,
+                                    explain_func_kwargs={"method": method}) for method in ["Saliency"]}
+        
+        self.selectivity.plot(results=results)
+        start = time.time()
         saliency_scores = self._get_saliency_map(image, label, method)
-        return self.selectivity(
-            model=self.model,
-            a_batch=saliency_scores,
+        result = {method: self.selectivity(
+            model=self.model, 
+            channel_first=True,
+            x_batch=image.unsqueeze(0).numpy(),
+            y_batch= torch.Tensor([label]).type(torch.int64).numpy(),
             device=self.device,
-        )
+            a_batch=torch.Tensor(saliency_scores).unsqueeze(0).numpy(),
+        )}
+        print(f"Time taken: {time.time() - start}")
+        return result

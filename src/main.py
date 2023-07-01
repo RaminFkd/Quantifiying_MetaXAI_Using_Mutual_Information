@@ -70,7 +70,6 @@ if __name__=='__main__':
                 batch_size=args.batch_size,
                 device=device,
             )
-
             weights_path.parent.mkdir(parents=True, exist_ok=True)
             torch.save(model.state_dict(), open(weights_path, 'wb'))
 
