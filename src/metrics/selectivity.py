@@ -56,16 +56,17 @@ class Selectivity(MetricBase):
         np.ndarray
             Selectivity scores
         """
-
+        norm_image = self.transform(image)
         results = {method: self.selectivity(
                                     model=self.model, 
                                     channel_first=True,
-                                    x_batch=image.unsqueeze(0).numpy(),
+                                    x_batch=norm_image.unsqueeze(0).numpy(),
                                     y_batch= torch.Tensor([label]).type(torch.int64).numpy(),
                                     a_batch=None,
                                     device=self.device,
                                     explain_func=quantus.explain,
-                                    explain_func_kwargs={"method": method}) for method in ["Saliency"]}
+                                    explain_func_kwargs={"method": method}) for method in ["Saliency", "IntegratedGradients"]}
+        
         
         self.selectivity.plot(results=results)
         start = time.time()
@@ -73,7 +74,7 @@ class Selectivity(MetricBase):
         result = {method: self.selectivity(
             model=self.model, 
             channel_first=True,
-            x_batch=image.unsqueeze(0).numpy(),
+            x_batch=norm_image.unsqueeze(0).numpy(),
             y_batch= torch.Tensor([label]).type(torch.int64).numpy(),
             device=self.device,
             a_batch=torch.Tensor(saliency_scores).unsqueeze(0).numpy(),

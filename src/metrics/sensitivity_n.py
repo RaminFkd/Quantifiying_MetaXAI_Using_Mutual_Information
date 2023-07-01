@@ -63,9 +63,9 @@ class SensitivityN(MetricBase):
         np.ndarray
             Correlation coefficients between input features and saliency scores
         """
-
+        norm_image = self.transform(image)
         results = self.sensitivity_n(model=self.model, 
-                        x_batch=image.unsqueeze(0).numpy(),
+                        x_batch=norm_image.unsqueeze(0).numpy(),
                         channel_first=True,
                         y_batch=torch.Tensor([label]).type(torch.int64).numpy(),
                         a_batch=None,
@@ -78,7 +78,7 @@ class SensitivityN(MetricBase):
         result =  self.sensitivity_n(
             model=self.model,
             channel_first=True,
-            x_batch=image.unsqueeze(0).numpy(),
+            x_batch=norm_image.unsqueeze(0).numpy(),
             y_batch= torch.Tensor([label]).type(torch.int64).numpy(),
             a_batch=torch.Tensor(saliency_scores).unsqueeze(0).numpy(),
             device=self.device,

@@ -72,9 +72,9 @@ def overlay_images(image_1:np.ndarray, image_2:np.ndarray,opacity:float) -> np.n
     return np.clip(overlay, 0, 255).astype(np.uint8)
 
 if "__main__" == __name__:
-    images_1 = np.array(pil.Image.open(r"D:\Users\Desktop\Uni\Master\Neural Networks (NN)\Seminar\reliability_metrics_to_evaluate_saliency_maps\data\CUB_200_2011\CUB_200_2011\images\001.Black_footed_Albatross\Black_Footed_Albatross_0001_796111.jpg"))
-    images_2 = np.array(pil.Image.open(r"D:\Users\Desktop\Uni\Master\Neural Networks (NN)\Seminar\reliability_metrics_to_evaluate_saliency_maps\data\CUB_200_2011\CUB_200_2011\images\001.Black_footed_Albatross\Black_Footed_Albatross_0002_55.jpg"))
-    plt.imshow(pil.Image.blend(images_1, images_1, 0.5))
+    #images_1 = np.array(pil.Image.open(r"D:\Users\Desktop\Uni\Master\Neural Networks (NN)\Seminar\reliability_metrics_to_evaluate_saliency_maps\data\CUB_200_2011\CUB_200_2011\images\001.Black_footed_Albatross\Black_Footed_Albatross_0001_796111.jpg"))
+    #images_2 = np.array(pil.Image.open(r"D:\Users\Desktop\Uni\Master\Neural Networks (NN)\Seminar\reliability_metrics_to_evaluate_saliency_maps\data\CUB_200_2011\CUB_200_2011\images\001.Black_footed_Albatross\Black_Footed_Albatross_0002_55.jpg"))
+    #plt.imshow(pil.Image.blend(images_1, images_1, 0.5))
     labels = ["Bird", "Saliency","Bird2", "Saliency2"]
     images = [
         np.array(pil.Image.open(r"D:\Users\Desktop\Uni\Master\Neural Networks (NN)\Seminar\reliability_metrics_to_evaluate_saliency_maps\data\CUB_200_2011\CUB_200_2011\images\001.Black_footed_Albatross\Black_Footed_Albatross_0001_796111.jpg")),
