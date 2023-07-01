@@ -1,11 +1,11 @@
-import torch
-import quantus
-import numpy as np
-from typing import Tuple, Optional
 from pathlib import Path
-import time
-import matplotlib.pyplot as plt
-from .metric_base import MetricBase, SUPPORTED_METHODS
+from typing import Optional, Tuple
+
+import numpy as np
+import quantus
+import torch
+
+from .metric_base import SUPPORTED_METHODS, MetricBase
 
 
 class Selectivity(MetricBase):
@@ -17,7 +17,7 @@ class Selectivity(MetricBase):
         normalize: bool = True,
         resize: Optional[Tuple[int, int]] = None,
         out_path: Optional[Path] = None,
-        patch_size: int = 56,
+        patch_size: int = 16,
         perturb_baseline: str = "black"
     ) -> None:
 
@@ -56,37 +56,25 @@ class Selectivity(MetricBase):
         np.ndarray
             Selectivity scores
         """
-        map = self._get_saliency_map(image, label, method)
-        norm_map = self._get_saliency_map(self.transform(image), label, method)
 
-        fig, ax = plt.subplots(1, 2)
-        ax[0].imshow(map)
-        ax[1].imshow(norm_map)
-        plt.show()
-
-        results = {method: self.selectivity(
-                                    model=self.model,
-                                    channel_first=True,
-                                    x_batch=image.unsqueeze(0).numpy(),
-                                    y_batch= torch.Tensor([label]).type(torch.int64).numpy(),
-                                    a_batch=None,
-                                    device=self.device,
-                                    explain_func=quantus.explain,
-                                    explain_func_kwargs={"method": method}) for method in ["Saliency", "IntegratedGradients"]}
-
-        print(list(results.values()))
-        #self.selectivity.plot(results=results)
-        start = time.time()
         saliency_scores = self._get_saliency_map(image, label, method)
-        result = {method: self.selectivity(
+
+        # add dimension if saliency_scores is 2D (e.g. for score cam -> grey scale)
+        if len(saliency_scores.shape) == 2:
+            saliency_scores = saliency_scores[np.newaxis, ...]
+
+        saliency_scores = self.saliency_resize(torch.Tensor(saliency_scores))
+
+        if np.all(saliency_scores.numpy() == 0):
+            return np.nan
+
+        selectivity = self.selectivity(
             model=self.model,
             channel_first=True,
             x_batch=image.unsqueeze(0).numpy(),
             y_batch= torch.Tensor([label]).type(torch.int64).numpy(),
             device=self.device,
-            a_batch=torch.Tensor(saliency_scores).unsqueeze(0).numpy(),
-        )}
-        print(f"Time taken: {time.time() - start}")
-        #self.selectivity.plot(results=result)
-        print(list(result.values()))
-        return result
+            a_batch=saliency_scores.unsqueeze(0).numpy(),
+        )
+
+        return np.trapz(selectivity, dx=1/len(selectivity[0]))

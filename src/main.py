@@ -23,12 +23,12 @@ parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--cuda', action='store_true')
 
 # Analysis arguments
-parser.add_argument('--metrics', type=str, default='dauc,iauc,dc,ic,sparsity')
-parser.add_argument('--attribution', type=str, default='ig,gradcam,scorecam')
+parser.add_argument('--metrics', type=str, default='dauc,iauc,dc,ic,sparsity,selectivity')
+parser.add_argument('--attribution', type=str, default='gradcam,scorecam,ig')
 parser.add_argument('--out_dir', type=str, default='./output/')
 parser.add_argument('--resize', type=int, default=128)
 parser.add_argument('--normalize', action='store_true')
-parser.add_argument('--n', type=int, default=5)
+parser.add_argument('--n', type=int, default=200)
 
 args = parser.parse_args()
 
@@ -87,10 +87,10 @@ if __name__=='__main__':
             )
 
             itr = 0
-            for _, (img, label) in dataset:
+            for idx, (img, label) in dataset:
                 if itr >= args.n:
                     break
-                to_save.append(metric(img, label, attr))
+                to_save.append((idx, metric(img, label, attr)))
                 itr += 1
 
             metr_out = out_dir / Path(f"{attr}/{metr}.pkl")
