@@ -30,7 +30,8 @@ class Selectivity(MetricBase):
 
         self.selectivity = quantus.Selectivity(
             patch_size=patch_size,
-            perturb_baseline=perturb_baseline
+            perturb_baseline=perturb_baseline,
+            disable_warnings=True
         )
 
     def __call__(
@@ -69,7 +70,7 @@ class Selectivity(MetricBase):
         saliency_scores = self.saliency_resize(torch.Tensor(saliency_scores))
 
         if np.all(saliency_scores.numpy() == 0):
-            return np.nan
+            return 0.0
 
         selectivity = self.selectivity(
             model=self.model,
@@ -78,6 +79,9 @@ class Selectivity(MetricBase):
             y_batch= torch.Tensor([label]).type(torch.int64).numpy(),
             device=self.device,
             a_batch=saliency_scores.unsqueeze(0).numpy(),
-        )
+        )[0]
 
-        return np.trapz(selectivity, dx=1/len(selectivity[0]))
+        if np.isnan(np.trapz(selectivity, dx=1 / len(selectivity))):
+            return 0.0
+
+        return np.trapz(selectivity, dx=1 / len(selectivity))

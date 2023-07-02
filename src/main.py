@@ -59,11 +59,12 @@ class SaveWorker:
         self._buffer = []
         self._shutdown = False
 
-        self._save_thread = Thread(target=self._save_daemon, daemon=True)
+        self._save_thread = Thread(target=self._save)
         self._save_thread.start()
 
     def shutdown(self):
         self._shutdown = True
+        self._save_thread.join()
 
     def save(self, obj):
         self._buffer.append(obj)
@@ -78,7 +79,7 @@ class SaveWorker:
         with open(self._out_file, 'wb') as f:
             pickle.dump(data, f)
 
-    def _save_daemon(self):
+    def _save(self):
         while not self._shutdown or len(self._buffer) > 0:
             if len(self._buffer) > 0:
                 self._flush()
