@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import torch
@@ -24,6 +24,7 @@ class Sparsity(MetricBase):
         image: torch.Tensor,
         label: int,
         method: SUPPORTED_METHODS = 'saliency',
+        idx: Optional[int] = None
     ) -> float:
         """
         Compute the sparsity of the saliency map for a given image.
@@ -36,6 +37,8 @@ class Sparsity(MetricBase):
             The label of the image
         method : SUPPORTED_METHODS, optional
             The attribution method, by default 'saliency'
+        idx : int, optional
+            The index of the image, by default None
 
         Returns
         -------

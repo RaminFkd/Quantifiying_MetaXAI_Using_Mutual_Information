@@ -38,6 +38,7 @@ class Selectivity(MetricBase):
         image: torch.Tensor,
         label: int,
         method: SUPPORTED_METHODS = 'saliency',
+        idx: Optional[int] = None
     ) -> np.ndarray:
         """
         Get selectivity scores for a given image.
@@ -50,6 +51,8 @@ class Selectivity(MetricBase):
             The label of the image
         method : SUPPORTED_METHODS, optional
             The method to attribute by, by default 'saliency'
+        idx : int, optional
+            The index of the image, by default None
 
         Returns
         -------
