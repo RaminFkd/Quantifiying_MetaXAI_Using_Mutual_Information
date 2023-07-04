@@ -28,6 +28,7 @@ class IAUC(MetricBase):
         label: int,
         method: SUPPORTED_METHODS = 'saliency',
         strict: bool = False,
+        idx: int = None
     ) -> Dict[str, Any]:
         """
         Compute the Insertion AUC (IAUC) for a given image and label. The

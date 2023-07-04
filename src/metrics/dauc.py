@@ -27,6 +27,7 @@ class DAUC(MetricBase):
         label: int,
         method: SUPPORTED_METHODS = 'saliency',
         strict: bool = False,
+        idx: int = None
     ) -> Dict[str, Any]:
         """
         Compute the Deletion AUC (DAUC) for a given image and label. The
@@ -44,6 +45,8 @@ class DAUC(MetricBase):
         strict : bool, optional
             If true, a meaningful value is only returned if the first predicted
             class matches the target, by default False
+        idx : int, optional
+            The index of the image, by default None
 
         Returns
         -------

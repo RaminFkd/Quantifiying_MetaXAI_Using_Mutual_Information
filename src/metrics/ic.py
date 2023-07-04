@@ -28,6 +28,7 @@ class IC(MetricBase):
         label: int,
         method: SUPPORTED_METHODS = 'saliency',
         strict: bool = False,
+        idx = None
     ) -> float:
         """
         Get IC score for a given image. The label is important to
@@ -44,6 +45,8 @@ class IC(MetricBase):
         strict : bool, optional
             If true, a meaningful value is only returned if the first predicted
             class matches the target, by default False
+        idx : int, optional
+            The index of the image, by default None
 
         Returns
         -------
@@ -51,7 +54,12 @@ class IC(MetricBase):
             The IC score
         """
 
-        scores = self.iauc(image, label, method, strict)['scores']
+        iauc_path = self.out_path / Path(f"iauc.pkl")
+        if iauc_path.exists() and idx is not None:
+            scores = self._load_scores(iauc_path, idx)
+        else:
+            scores = self.iauc(image, label, method, strict)['scores']
+
         if len(scores) == 0:
             return 0.0
 

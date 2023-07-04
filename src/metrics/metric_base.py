@@ -1,4 +1,5 @@
 from pathlib import Path
+import pickle
 from typing import Literal, Optional, Tuple
 
 import numpy as np
@@ -156,3 +157,28 @@ class MetricBase():
             image = np.mean(image, axis=0)
 
         return image
+
+    def _load_scores(
+        self,
+        path: Path,
+        idx: int,
+    ) -> np.ndarray:
+        """
+        Loads the scores from a given path.
+
+        Parameters
+        ----------
+        path : Path
+            The path to the scores.
+        idx : int
+            The index of the scores to load.
+
+        Returns
+        -------
+        np.ndarray
+            The scores.
+        """
+        with open(path, "rb") as f:
+            data = pickle.load(f)
+
+        return data[idx]["scores"]
