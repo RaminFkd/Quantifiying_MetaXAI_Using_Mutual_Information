@@ -18,7 +18,7 @@ def load_data(input_dir: str, extension: str = "pkl") -> dict:
             try:
                 image_idx, scores = zip(*data)
                 # Remove nan values
-                #scores = [x for x in scores if str(x) != "nan"]
+                # scores = [x for x in scores if str(x) != "nan"]
                 scores = np.array(list(scores), dtype=np.float64).flatten()
             except:
                 image_idx, data_dicts = zip(*data)
@@ -123,7 +123,7 @@ def create_bar_chart(
         print(traceback.format_exc())
 
 
-def create_scatter_plot(x: list[float], y: list[float, ], title: str = "Scatter Plot", x_label: str = "x", y_label: str = "y", output_path: str = None):
+def create_scatter(x: list[float], y: list[float, ], title: str = "Scatter Plot", x_label: str = "x", y_label: str = "y", output_path: str = None):
 
     fig, ax = plt.subplots()
     ax.scatter(x, y)
@@ -142,18 +142,22 @@ def create_bar(data: dict, sort: bool = False):
         if sort:
             # create save paths
             save_path_mi = Path(
-                in_dir, "bar_sorted", f"{attribution}_mi.png", mkdirs=True)
+                "output", "bar_sorted", f"{attribution}_mi.png")
             save_path_mig_x = Path(
-                in_dir, "bar_sorted", f"{attribution}_mig_x.png", mkdirs=True)
+                "output", "bar_sorted", f"{attribution}_mig_x.png")
             save_path_mig_y = Path(
-                in_dir, "bar_sorted", f"{attribution}_mig_y.png", mkdirs=True)
+                "output", "bar_sorted", f"{attribution}_mig_y.png")
         else:
             save_path_mi = Path(
-                in_dir, "bar", f"{attribution}_mi.png", mkdirs=True)
+                "output", "bar", f"{attribution}_mi.png")
+
             save_path_mig_x = Path(
-                in_dir, "bar", f"{attribution}_mig_x.png", mkdirs=True)
+                "output", "bar", f"{attribution}_mig_x.png")
             save_path_mig_y = Path(
-                in_dir, "bar", f"{attribution}_mig_y.png", mkdirs=True)
+                "output", "bar", f"{attribution}_mig_y.png")
+        save_path_mi.parent.mkdir(parents=True, exist_ok=True)
+        save_path_mig_x.parent.mkdir(parents=True, exist_ok=True)
+        save_path_mig_y.parent.mkdir(parents=True, exist_ok=True)
         # sort lists by mi
         if sort:
             mi, x_labels = zip(
@@ -190,9 +194,10 @@ def create_bar(data: dict, sort: bool = False):
 def create_mean_bar(data: dict, sort: bool = False):
     # get mean mi for each metric combination
     mean_dict = {}
-    save_path_mi_mean = Path(in_dir, f"mean_mi.png", mkdirs=True)
+    save_path_mi_mean = Path("output", f"mean_mi.png")
     if sort:
-        save_path_mi_mean = Path(in_dir, f"mean_mi_sorted.png", mkdirs=True)
+        save_path_mi_mean = Path("output", f"mean_mi_sorted.png")
+    save_path_mi_mean.parent.mkdir(parents=True, exist_ok=True)
     for attribution, values in data.items():
         for metric in values["metrics"]:
             if not metric in mean_dict:
@@ -208,24 +213,32 @@ def create_mean_bar(data: dict, sort: bool = False):
             *sorted(zip(data, x_labels)))
     create_bar_chart(data, title=f"Mean Mutual Information", xlabel="Metrics",
                      ylabel=f"Mutual Information", tick_labels=x_labels, output_path=save_path_mi_mean)
-    
 
 
-
-def create_histograms(data: dict):
+def create_histograms(data: dict, bins: int = 10):
     for metric, values in data.items():
-        save_path_hist = Path(in_dir, metric[0], f"{metric[1]}_histogramm.png")
+        save_path_hist = Path(
+            "output", "histograms", f"{metric[1]}_histogramm_{bins}.png")
+        save_path_hist.parent.mkdir(parents=True, exist_ok=True)
         create_histogram(
-            values[-1], title=f"{metric[0]} {metric[1]}", xlabel=f"{metric[1]} scores", ylabel="absolute Frequency", output_path=save_path_hist, bins=10)
+            values[-1], title=f"{metric[0]} {metric[1]}", xlabel=f"{metric[1]} scores", ylabel="absolute Frequency", output_path=save_path_hist, bins=bins)
 
-def create_scatter_plot(data:dict):
+
+def create_scatter_plot(data: dict):
     all_combis = list(itertools.combinations(data.keys(), 2))
     for combi in all_combis:
-        output_path = Path(in_dir, "scatter_plots", f"{combi[0]}_{combi[1]}.png", mkdirs=True)
-        create_scatter_plot(data[combi[0]], data[combi[1]], title=f"{combi[0]} vs {combi[1]}", x_label=combi[0], y_label=combi[1], output_path=output_path)
+        attribution = combi[0][0]
+        metric_1 = combi[0][1]
+        metric_2 = combi[1][1]
+        output_path = Path("output", "scatter_plots",attribution,
+                           f"{attribution}_{metric_1}_{metric_2}.png")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        create_scatter(data[combi[0]][1], data[combi[1]][1],
+                       title=f"{attribution}- {metric_1} {metric_2}", x_label=metric_1, y_label=metric_2, output_path=output_path)
+
 
 if __name__ == "__main__":
-    in_dir = r"output"
+    in_dir = r"output/gradcam"
     data = load_mi(Path(r"data/mi.pkl"))
     create_bar(data, sort=False)
     create_mean_bar(data, sort=True)
