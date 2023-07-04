@@ -6,7 +6,8 @@ def show_images(
         images:list[np.ndarray],
         columns:int,
         rows:int,
-        labels:list[str]=None):
+        labels:list[str]=None,
+        output_path:str=None):
     """shox images or graphs in a grid
 
     Parameters
@@ -42,6 +43,8 @@ def show_images(
             ax.axis('off')
 
     plt.tight_layout()
+    if output_path:
+        plt.savefig(output_path)
     plt.show()
 
 def overlay_images(image_1:np.ndarray, image_2:np.ndarray,opacity:float) -> np.ndarray:
