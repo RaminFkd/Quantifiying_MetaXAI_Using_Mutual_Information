@@ -1,10 +1,11 @@
-import torch
-import quantus
-import numpy as np
-from typing import Tuple, Optional
 from pathlib import Path
+from typing import Optional, Tuple
 
-from .metric_base import MetricBase, SUPPORTED_METHODS
+import numpy as np
+import quantus
+import torch
+
+from .metric_base import SUPPORTED_METHODS, MetricBase
 
 
 class Selectivity(MetricBase):
@@ -16,7 +17,7 @@ class Selectivity(MetricBase):
         normalize: bool = True,
         resize: Optional[Tuple[int, int]] = None,
         out_path: Optional[Path] = None,
-        patch_size: int = 56,
+        patch_size: int = 16,
         perturb_baseline: str = "black"
     ) -> None:
 
@@ -29,7 +30,8 @@ class Selectivity(MetricBase):
 
         self.selectivity = quantus.Selectivity(
             patch_size=patch_size,
-            perturb_baseline=perturb_baseline
+            perturb_baseline=perturb_baseline,
+            disable_warnings=True
         )
 
     def __call__(
@@ -37,6 +39,7 @@ class Selectivity(MetricBase):
         image: torch.Tensor,
         label: int,
         method: SUPPORTED_METHODS = 'saliency',
+        idx: Optional[int] = None
     ) -> np.ndarray:
         """
         Get selectivity scores for a given image.
@@ -49,6 +52,8 @@ class Selectivity(MetricBase):
             The label of the image
         method : SUPPORTED_METHODS, optional
             The method to attribute by, by default 'saliency'
+        idx : int, optional
+            The index of the image, by default None
 
         Returns
         -------
@@ -57,8 +62,26 @@ class Selectivity(MetricBase):
         """
 
         saliency_scores = self._get_saliency_map(image, label, method)
-        return self.selectivity(
+
+        # add dimension if saliency_scores is 2D (e.g. for score cam -> grey scale)
+        if len(saliency_scores.shape) == 2:
+            saliency_scores = saliency_scores[np.newaxis, ...]
+
+        saliency_scores = self.saliency_resize(torch.Tensor(saliency_scores))
+
+        if np.all(saliency_scores.numpy() == 0):
+            return 0.0
+
+        selectivity = self.selectivity(
             model=self.model,
-            a_batch=saliency_scores,
+            channel_first=True,
+            x_batch=image.unsqueeze(0).numpy(),
+            y_batch= torch.Tensor([label]).type(torch.int64).numpy(),
             device=self.device,
-        )
+            a_batch=saliency_scores.unsqueeze(0).numpy(),
+        )[0]
+
+        if np.isnan(np.trapz(selectivity, dx=1 / len(selectivity))):
+            return 0.0
+
+        return np.trapz(selectivity, dx=1 / len(selectivity))

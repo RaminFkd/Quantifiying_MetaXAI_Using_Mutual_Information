@@ -1,3 +1,4 @@
+import time
 import torch
 import quantus
 import numpy as np
@@ -17,8 +18,8 @@ class SensitivityN(MetricBase):
         normalize: bool = True,
         resize: Optional[Tuple[int, int]] = None,
         out_path: Optional[Path] = None,
-        feature_in_step: int = 224,
-        n_max_percentage: float = 0.8,
+        feature_in_step: int = 16,
+        n_max_percentage: float = 0.3,
         similarity_func: quantus.similarity_func = quantus.similarity_func.correlation_pearson,
         perturb_func: quantus.perturb_func = quantus.perturb_func.baseline_replacement_by_indices,
         perturb_baseline: str = "uniform",
@@ -62,10 +63,25 @@ class SensitivityN(MetricBase):
         np.ndarray
             Correlation coefficients between input features and saliency scores
         """
-
+        norm_image = self.transform(image)
+        results = self.sensitivity_n(model=self.model, 
+                        x_batch=norm_image.unsqueeze(0).numpy(),
+                        channel_first=True,
+                        y_batch=torch.Tensor([label]).type(torch.int64).numpy(),
+                        a_batch=None,
+                        device=self.device,
+                        explain_func=quantus.explain, 
+                        explain_func_kwargs={"method": "IntegratedGradients"})
+        
+        start = time.time() 
         saliency_scores = self._get_saliency_map(image, label, method)
-        return self.sensitivity_n(
+        result =  self.sensitivity_n(
             model=self.model,
-            a_batch=saliency_scores,
+            channel_first=True,
+            x_batch=norm_image.unsqueeze(0).numpy(),
+            y_batch= torch.Tensor([label]).type(torch.int64).numpy(),
+            a_batch=torch.Tensor(saliency_scores).unsqueeze(0).numpy(),
             device=self.device,
         )
+        print(f"Time taken: {time.time() - start}")
+        return result

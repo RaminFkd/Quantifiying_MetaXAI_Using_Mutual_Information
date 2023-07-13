@@ -1,4 +1,5 @@
 from pathlib import Path
+import pickle
 from typing import Literal, Optional, Tuple
 
 import numpy as np
@@ -11,7 +12,8 @@ SUPPORTED_METHODS = Literal[
     "saliency",
     "ig",
     "gradcam",
-    "scorecam"
+    "scorecam",
+    "selectivity"
 ]
 
 
@@ -48,6 +50,9 @@ class MetricBase():
                 std=[1/0.229, 1/0.224, 1/0.225] if normalize else [1, 1, 1],
             ),
             T.ToPILImage(),
+        ])
+        self.saliency_resize = T.Compose([
+            T.Resize(resize if resize else (224,224), antialias=True),
         ])
 
     def _get_saliency_map(
@@ -152,3 +157,28 @@ class MetricBase():
             image = np.mean(image, axis=0)
 
         return image
+
+    def _load_scores(
+        self,
+        path: Path,
+        idx: int,
+    ) -> np.ndarray:
+        """
+        Loads the scores from a given path.
+
+        Parameters
+        ----------
+        path : Path
+            The path to the scores.
+        idx : int
+            The index of the scores to load.
+
+        Returns
+        -------
+        np.ndarray
+            The scores.
+        """
+        with open(path, "rb") as f:
+            data = pickle.load(f)
+
+        return data[idx]["scores"]
